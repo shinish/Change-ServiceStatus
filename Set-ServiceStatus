@@ -1,0 +1,105 @@
+<#
+.Synopsis
+   Change the Service Status
+.DESCRIPTION
+   Change the Service Status as below
+
+   Status    : Running
+   StartType : Automatic
+.EXAMPLE
+   .\Set-ServiceStatus.ps1 -computerName lon-dc1, lon-dc2  -serviceName wuauserv,bits
+.EXAMPLE
+   .\Set-ServiceStatus.ps1 -fileName .\computers.txt -serviceName wuauserv,bits
+.INPUTS
+   Requires Computer.txt to be in the same path
+.OUTPUTS
+  .\ServiceStatus.html
+.NOTES
+   Shinish Sasidhaaran
+   shinish@live.com
+.LINK
+    www.powershellhacks.com
+#>
+
+
+[CmdletBinding( DefaultParameterSetName = 'ComputerName')]
+param (
+    #Provide the file name of the computers list
+    [Parameter(ParameterSetName = "ComputerList")]
+    [string]
+    $fileName,
+
+    # Provide the list of the Services
+    [Parameter(Mandatory = $True)]
+    [string[]]
+    $serviceName,
+
+    #Provide the server in the comma seperated value
+    [Parameter(
+        Mandatory = $True, 
+        ParameterSetName = "ComputerName")]
+    [string[]]
+    $computerName
+
+)
+
+
+$Param = @{ 
+head = @"
+<Title>Service Status Report</Title>
+<style>
+body { background-color:#dbdad9;
+        font-family:Verdana;
+        font-size:10pt; }
+td, th { border:0px solid black; 
+        border-collapse:collapse;
+        white-space:pre; }
+th { color:white;
+    background-color:black; }
+table, tr, td, th { padding: 2px; margin: 0px ;white-space:pre; }
+tr:nth-child(odd) {background-color: lightgray}
+table { width:95%;margin-left:5px; margin-bottom:20px;}
+h2 {
+font-family:Tahoma;
+color:##6f7d8e;
+}
+</style>
+"@
+body = "<B>Service Status - $(get-date -UFormat %m-%d-%Y) </B>"
+}
+
+    
+$error.clear() | out-null
+try {
+    if (($null -ne $computerName -or $null -ne $fileName) -and $null -ne $serviceName) {
+    
+        if ($null -ne $computerName){
+            $computers = $computerName 
+        }
+        else{
+            $computers = get-content $fileName 
+        }
+        $serviceStatus = invoke-command -ComputerName $computers -ScriptBlock {
+            $using:serviceName | ForEach-Object {
+                $params = @{
+                    Name        = $_
+                    StartupType = 'Automatic' 
+                    Status      = 'Running'
+                }
+                Set-Service @params 
+            }
+            $using:serviceName | ForEach-Object { get-service -name  $_  }
+
+        }  -ErrorAction Stop -ErrorVariable errorVar
+        $serviceStatus  |sort-object  PSComputerName| 
+        Select-Object @{n = "Computer Name" ; e={$_.PSComputerName}}, DisplayName, Status, StartType  |
+        ConvertTo-Html @Param -PostContent "www.powershellhacks.com" | 
+        Out-File ./ServiceStatus.html -Force
+    }
+}
+catch [System.Management.Automation.Remoting.PSRemotingTransportException]{
+    Write-Warning "Some servers are not reachable"
+}
+catch {
+    0..(($error.count)-1) |ForEach-Object{ Write-warning $($error[$_].exception.message)}
+}
